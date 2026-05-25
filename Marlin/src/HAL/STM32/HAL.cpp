@@ -125,6 +125,32 @@ void HAL_adc_start_conversion(const uint8_t adc_pin) { HAL_adc_result = analogRe
 
 uint16_t HAL_adc_get_result() { return HAL_adc_result; }
 
-void flashFirmware(const int16_t) { NVIC_SystemReset(); }
+void flashFirmware(const int16_t) {
+  #ifdef STM32H7xx
+    // Jump to STM32H743 ROM DFU bootloader in system memory (0x1FF09800).
+    // Triggered by M997; allows wireless flashing via Pi without touching P39/K1.
+    typedef void (*pFunction)(void);
+
+    SysTick->CTRL = 0;
+    SysTick->LOAD = 0;
+    SysTick->VAL  = 0;
+
+    HAL_RCC_DeInit();
+
+    __disable_irq();
+    for (uint8_t i = 0; i < sizeof(NVIC->ICER) / sizeof(NVIC->ICER[0]); i++) {
+      NVIC->ICER[i] = 0xFFFFFFFF;
+      NVIC->ICPR[i] = 0xFFFFFFFF;
+    }
+
+    const uint32_t dfuAddr = 0x1FF09800UL;
+    SCB->VTOR = dfuAddr;
+    __set_MSP(*(__IO uint32_t*)dfuAddr);
+    ((pFunction)(*(__IO uint32_t*)(dfuAddr + 4UL)))();
+    while (1) {}
+  #else
+    NVIC_SystemReset();
+  #endif
+}
 
 #endif // ARDUINO_ARCH_STM32 && !STM32GENERIC
